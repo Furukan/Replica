@@ -1,0 +1,6 @@
+{
+  "name": "replicaserver",
+  "tree": {
+    "$path": "src"
+  }
+}

@@ -23,12 +23,11 @@ local IsStudio = RunService:IsStudio()
 local IsServer = RunService:IsServer()
 local DefinedRemotes = {} -- [name] = true, ...
 
-local Container, OnContainerReady do
-	
+local Container, OnContainerReady
+do
 	if IsServer == true then
-		
 		Container = ReplicatedStorage:FindFirstChild(CONTAINER_NAME)
-		
+
 		if Container ~= nil then
 			if IsStudio == true then
 				warn(`[{script.Name}]: ReplicatedStorage "{CONTAINER_NAME}" container was already defined`)
@@ -38,15 +37,12 @@ local Container, OnContainerReady do
 			Container.Name = CONTAINER_NAME
 			Container.Parent = ReplicatedStorage
 		end
-		
 	else
-		
 		Container = ReplicatedStorage:FindFirstChild(CONTAINER_NAME)
-		
+
 		if Container == nil then
-			
 			OnContainerReady = Instance.new("BindableEvent")
-			
+
 			task.spawn(function()
 				while task.wait() do
 					Container = ReplicatedStorage:FindFirstChild(CONTAINER_NAME)
@@ -56,11 +52,8 @@ local Container, OnContainerReady do
 					end
 				end
 			end)
-			
 		end
-		
 	end
-	
 end
 
 ----- Public -----
@@ -87,39 +80,34 @@ local Remote = {}
 Remote.__index = Remote
 
 function Remote.New(name: string, is_unreliable: boolean?): RemoteEvent
-	
 	if type(name) ~= "string" then
 		error(`[{script.Name}]: name must be a string`)
 	end
-	
+
 	if IsServer == true then
-		
 		if DefinedRemotes[name] ~= nil then
 			error(`[{script.Name}]: RemoteEvent {name} was already defined`)
 		end
-		
+
 		DefinedRemotes[name] = true
-		
+
 		local remote = Instance.new(if is_unreliable == true then "UnreliableRemoteEvent" else "RemoteEvent")
 		remote.Name = name
 		remote.Parent = Container
-		
+
 		return remote
-		
 	else
-		
 		local remote: RemoteEvent = Container and Container:FindFirstChild(name)
-		
+
 		if remote ~= nil then
 			return remote
 		end
-		
+
 		local connections = {}
-		
+
 		local self = setmetatable({
 			OnClientEvent = {
 				Connect = function(_, fn)
-
 					if remote ~= nil then
 						return remote.OnClientEvent:Connect(fn)
 					else
@@ -127,7 +115,6 @@ function Remote.New(name: string, is_unreliable: boolean?): RemoteEvent
 						table.insert(connections, connection)
 						return connection
 					end
-
 				end,
 			},
 			OnServerEvent = {
@@ -137,9 +124,8 @@ function Remote.New(name: string, is_unreliable: boolean?): RemoteEvent
 			},
 			RemoteEvent = nil,
 		}, Remote)
-		
+
 		local function on_container_ready()
-			
 			local missing_start = os.clock()
 
 			while true do
@@ -163,9 +149,8 @@ function Remote.New(name: string, is_unreliable: boolean?): RemoteEvent
 
 			self.RemoteEvent = remote
 			connections = nil :: any
-			
 		end
-		
+
 		if Container ~= nil then
 			task.spawn(on_container_ready)
 		else
@@ -175,11 +160,9 @@ function Remote.New(name: string, is_unreliable: boolean?): RemoteEvent
 				on_container_ready()
 			end)
 		end
-		
+
 		return self
-		
 	end
-	
 end
 
 function Remote:FireServer(...)
