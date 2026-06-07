@@ -75,14 +75,13 @@ local Signal = {}
 Signal.__index = Signal
 
 function Connection:Disconnect()
-
 	if self.IsConnected == false then
 		return
 	end
-	
+
 	local signal = self.signal
 	self.IsConnected = false
-	
+
 	if signal.head == self then
 		signal.head = self.next
 	else
@@ -94,22 +93,18 @@ function Connection:Disconnect()
 			prev.next = self.next
 		end
 	end
-
 end
 
 function Signal.New<T...>(): Signal<T...>
-
 	local self = {
 		head = nil,
 	}
 	setmetatable(self, Signal)
 
 	return self
-
 end
 
 function Signal:Connect(listener: (...any) -> ())
-	
 	if type(listener) ~= "function" then
 		error(`[{script.Name}]: \"listener\" must be a function; Received {typeof(listener)}`)
 	end
@@ -125,7 +120,6 @@ function Signal:Connect(listener: (...any) -> ())
 	self.head = connection
 
 	return connection
-
 end
 
 function Signal:Fire(...)
@@ -152,20 +146,19 @@ function Signal:Wait()
 end
 
 function Signal:FireUntil(continue_callback: () -> boolean, ...)
-	
 	if type(continue_callback) ~= "function" then
 		error(`[{script.Name}]: \"continue_callback\" must be a function; Received {typeof(continue_callback)}`)
 	end
-	
+
 	local items = {}
 	local args = table.pack(...)
-	
+
 	local item = self.head
 	while item ~= nil do
 		table.insert(items, item)
 		item = item.next
 	end
-	
+
 	task.spawn(function()
 		for _, check_item in ipairs(items) do
 			if check_item.IsConnected == true then
@@ -176,7 +169,6 @@ function Signal:FireUntil(continue_callback: () -> boolean, ...)
 			end
 		end
 	end)
-	
 end
 
 return table.freeze({

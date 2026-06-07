@@ -38,7 +38,7 @@ local RateLimits = {} -- {rate_limit = true, ...}
 local RateLimit = {}
 RateLimit.__index = RateLimit
 
-function RateLimit.New(rate : number, is_full_wait : boolean?) --> [RateLimit]
+function RateLimit.New(rate: number, is_full_wait: boolean?) --> [RateLimit]
 	if rate <= 0 then
 		error("[RateLimit]: Invalid rate")
 	end
@@ -55,17 +55,16 @@ function RateLimit.New(rate : number, is_full_wait : boolean?) --> [RateLimit]
 	return self
 end
 
-function RateLimit:CheckRate(source) : boolean --> is_to_be_processed [bool] -- Whether event should be processed
-	
+function RateLimit:CheckRate(source): boolean --> is_to_be_processed [bool] -- Whether event should be processed
 	local sources = self.sources
 	local os_clock = os.clock()
-	
+
 	if source == nil then
 		source = "nil"
 	end
-	
+
 	local rate_time: number = sources[source]
-	
+
 	if rate_time ~= nil then
 		if self.is_full_wait ~= true then
 			rate_time = math.max(os_clock, rate_time + self.rate_period)
@@ -85,14 +84,12 @@ function RateLimit:CheckRate(source) : boolean --> is_to_be_processed [bool] -- 
 		end
 	else
 		-- Preventing from remembering players that already left:
-		if typeof(source) == "Instance" and source:IsA("Player")
-			and PlayerReference[source] == nil then
+		if typeof(source) == "Instance" and source:IsA("Player") and PlayerReference[source] == nil then
 			return false
 		end
 		sources[source] = os_clock + self.rate_period
 		return true
 	end
-	
 end
 
 function RateLimit:CleanSource(source) -- Forgets about the source - must be called for any object that

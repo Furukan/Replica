@@ -1,0 +1,10 @@
+[package]
+name = "furukan/replicaclient"
+version = "0.1.0"
+license = "MIT"
+registry = "https://github.com/UpliftGames/wally-index"
+realm = "shared"
+exclude = ["sourcemap.json"]
+include = ["src", "wally.toml", "wally.lock", "default.project.json"]
+
+[dependencies]

@@ -55,10 +55,9 @@ local function RunEventHandlerInFreeThread(...)
 	end
 end
 
-local function Cleanup(object : any, ...)
-	
+local function Cleanup(object: any, ...)
 	local object_type = typeof(object)
-	
+
 	if object_type == "function" then
 		object(...)
 	elseif object_type == "RBXScriptConnection" then
@@ -72,7 +71,6 @@ local function Cleanup(object : any, ...)
 			object:Disconnect()
 		end
 	end
-	
 end
 
 local function CleanupInThread(...)
@@ -100,17 +98,15 @@ export type Maid = {
 local MaidToken = {}
 MaidToken.__index = MaidToken
 
-function MaidToken.New(maid, object : any)
-	
+function MaidToken.New(maid, object: any)
 	local self = {
 		maid = maid,
 		object = object,
 	}
-	
+
 	setmetatable(self, MaidToken)
-	
+
 	return self
-	
 end
 
 function MaidToken:Destroy()
@@ -118,32 +114,28 @@ function MaidToken:Destroy()
 end
 
 function MaidToken:Cleanup(...)
-	
 	if self.object == nil then
 		return
 	end
-	
+
 	self.maid.tokens[self] = nil
 	CleanupInThread(self.object, ...)
 	self.object = nil
-
 end
 
 local Maid = {}
 Maid.__index = Maid
 
 function Maid.New(key: any)
-	
 	local self = {
 		tokens = {}, -- [Token] = true, ...
 		is_cleaned = false,
 		key = key,
 	}
-	
+
 	setmetatable(self, Maid)
-	
+
 	return self
-	
 end
 
 function Maid:IsActive()
@@ -151,40 +143,38 @@ function Maid:IsActive()
 end
 
 function Maid:Add(object: any)
-	
 	if self.is_cleaned == true then
 		CleanupInThread(object)
 	end
-	
+
 	local object_type = typeof(object)
-	
+
 	if object_type == "table" then
 		if type(object.Destroy) ~= "function" and type(object.Disconnect) ~= "function" then
-			error(`[{script.Name}]: Received table as cleanup object, but couldn't detect a :Destroy() or :Disconnect() method`)
+			error(
+				`[{script.Name}]: Received table as cleanup object, but couldn't detect a :Destroy() or :Disconnect() method`
+			)
 		end
 	elseif object_type ~= "function" and object_type ~= "RBXScriptConnection" and object_type ~= "Instance" then
 		error(`[{script.Name}]: Cleanup of type \"{object_type}\" not supported`)
 	end
-	
+
 	local token = MaidToken.New(self, object)
 	self.tokens[token] = true
-	
+
 	return token
-	
 end
 
 function Maid:Cleanup(...)
-	
 	if self.key ~= nil then
 		error(`[{script.Name}]: "Cleanup()" is locked for this Maid`)
 	end
-	
+
 	self.is_cleaned = true
-	
+
 	for token in pairs(self.tokens) do
 		token:Cleanup(...)
 	end
-	
 end
 
 function Maid:Unlock(key: any)
