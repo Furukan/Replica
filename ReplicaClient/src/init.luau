@@ -16,19 +16,19 @@ MAD STUDIO
 	
 		Replica.RequestData() -- Requests the server to start sending replica data
 		
-		Replica.OnNew(token: string, listener: (replica) -> ()): Signal.Connection
-		Replica.FromId(id: number): Replica?
-		
+		Replica.OnNew<TData, TTags>(token: string, listener: (replica: Replica<TData, TTags>) -> ()): Signal.Connection
+		Replica.FromId(id: number): Replica<any, any>?
+
 	Members [Replica]:
-	
-		Replica.Tags:          {} -- Secondary Replica identifiers
-		Replica.Data:          {} -- Table which is replicated; Can only be written to through setter methods server-side
-		
+
+		Replica.Tags:          TTags -- Secondary Replica identifiers
+		Replica.Data:          TData -- Table which is replicated; Can only be written to through setter methods server-side
+
 		Replica.Id:            number -- Unique identifier
 		Replica.Token:         string -- Primary Replica identifier
-		
-		Replica.Parent:        Replica?
-		Replica.Children:      {[Replica]: true}
+
+		Replica.Parent:        Replica<any, any>?
+		Replica.Children:      {[Replica<any, any>]: true}
 		
 		Replica.BoundInstance: Instance? -- WARNING: Will be set to nil after destruction
 		
@@ -54,7 +54,7 @@ MAD STUDIO
 				-- ("TableInsert", path, value, index)
 				-- ("TableRemove", path, value, index)
 				
-		Replica:GetChild(token: string): Replica? -- Searches for a child replica with given token name
+		Replica:GetChild(token: string): Replica<any, any>? -- Searches for a child replica with given token name
 		
 		Replica:FireServer(...) -- Fire a signal to server-side listeners for this specific Replica; Must be subscribed
 		Replica:UFireServer(...) -- Same as "Replica:FireServer()", but using UnreliableRemoteEvent
@@ -144,29 +144,33 @@ end
 
 ----- Public -----
 
-export type Replica = {
-	Tags: { [any]: any },
-	Data: { [any]: any },
+export type Replica<TData, TTags> = {
+	Tags: TTags,
+	Data: TData,
 	Id: number,
 	Token: string,
-	Parent: Replica?,
-	Children: { [Replica]: boolean? },
+	Parent: Replica<any, any>?,
+	Children: { [Replica<any, any>]: boolean? },
 	BoundInstance: Instance?,
 	OnClientEvent: { Connect: (self: any, listener: (...any) -> ()) -> { Disconnect: (self: any) -> () } },
 	Maid: typeof(Maid),
 
-	OnSet: (self: any, path: {}, listener: () -> ()) -> Signal.Connection,
+	OnSet: (
+		self: any,
+		path: { string | number },
+		listener: (new_value: any, old_value: any) -> ()
+	) -> Signal.Connection,
 	OnWrite: (self: any, function_name: string, listener: (...any) -> ()) -> Signal.Connection,
 	OnChange: (
 		self: any,
 		listener: (
 			action: "Set" | "SetValues" | "TableInsert" | "TableRemove",
-			path: { any },
+			path: { string | number },
 			param1: any,
 			param2: any?
 		) -> ()
 	) -> Signal.Connection,
-	GetChild: (self: any, token: string) -> Replica?,
+	GetChild: (self: any, token: string) -> Replica<any, any>?,
 	FireServer: (self: any, ...any) -> (),
 	UFireServer: (self: any, ...any) -> (),
 	Identify: (self: any) -> string,
@@ -258,7 +262,7 @@ function Replica.RequestData()
 	end)
 end
 
-function Replica.OnNew(token: string, listener: (replica: Replica) -> ()): Signal.Connection
+function Replica.OnNew<TData, TTags>(token: string, listener: (replica: Replica<TData, TTags>) -> ()): Signal.Connection
 	if type(token) ~= "string" then
 		error(`[{script.Name}]: "token" must be a string`)
 	end
@@ -296,7 +300,7 @@ function Replica.OnNew(token: string, listener: (replica: Replica) -> ()): Signa
 	return connection
 end
 
-function Replica.FromId(id: number): typeof(Replica)?
+function Replica.FromId<TData, TTags>(id: number): Replica<TData, TTags>?
 	return Replicas[id]
 end
 
@@ -339,7 +343,7 @@ function Replica:OnChange(listener: (
 	return self.changed_listeners:Connect(listener)
 end
 
-function Replica:GetChild(token: string): Replica?
+function Replica:GetChild(token: string): Replica<any, any>?
 	if type(token) ~= "string" then
 		error(`[{script.Name}]: "token" must be a string`)
 	end
