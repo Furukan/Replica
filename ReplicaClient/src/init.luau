@@ -62,7 +62,12 @@ MAD STUDIO
 		Replica:Identify(): string -- Debug
 
 		Replica:IsActive(): boolean
-	
+
+		Replica:Hold(): () -> () -- Queues incoming updates (Set, SetValues, TableInsert, TableRemove, Write)
+			-- for this replica until every hold is released; returns a release function (safe to call
+			-- more than once). Queued updates are applied in original order on the last release, firing
+			-- listeners as they apply. Destruction applies queued updates immediately.
+
 --]]
 
 ----- Dependencies -----
@@ -142,6 +147,44 @@ local function LoadWriteLib(module: ModuleScript)
 	return write_lib
 end
 
+local function ApplyUpdate(replica, method: string, ...)
+	ReplicationFlag = true
+	local success, msg = pcall(replica[method], replica, ...)
+	ReplicationFlag = false
+	if success ~= true then
+		error(`[{script.Name}]: Error while updating replica:\n{replica:Identify()}\n` .. msg)
+	end
+end
+
+local function FlushHoldQueue(replica, force: boolean?)
+	local hold_queue = replica.hold_queue
+	if hold_queue == nil then
+		return
+	end
+
+	while hold_queue[1] ~= nil and (force == true or replica.hold_count == 0) do
+		local packed_update = table.remove(hold_queue, 1)
+		task.spawn(ApplyUpdate, replica, table.unpack(packed_update, 1, packed_update.n))
+	end
+
+	if hold_queue[1] == nil then
+		replica.hold_queue = nil
+	end
+end
+
+local function ProcessUpdate(replica, method: string, ...)
+	if replica.hold_count > 0 then
+		local hold_queue = replica.hold_queue
+		if hold_queue == nil then
+			hold_queue = {}
+			replica.hold_queue = hold_queue
+		end
+		table.insert(hold_queue, table.pack(method, ...))
+	else
+		ApplyUpdate(replica, method, ...)
+	end
+end
+
 ----- Public -----
 
 export type Replica<TData, TTags> = {
@@ -175,6 +218,7 @@ export type Replica<TData, TTags> = {
 	UFireServer: (self: any, ...any) -> (),
 	Identify: (self: any) -> string,
 	IsActive: (self: any) -> boolean,
+	Hold: (self: any) -> (() -> ()),
 }
 
 local FreeRunnerThread
@@ -234,6 +278,9 @@ local function ReplicaNew(id: number, self_creation: {}) -- self_creation = {tok
 		set_listeners = {}, -- {[key]: Signal}
 		write_listeners = {}, -- {[key]: Signal}
 		changed_listeners = Signal.New(),
+
+		hold_count = 0,
+		hold_queue = nil, -- {packed_update, ...}?
 	}, Replica)
 
 	if parent ~= nil then
@@ -377,6 +424,24 @@ function Replica:IsActive(): boolean
 	return self.Maid:IsActive()
 end
 
+function Replica:Hold(): () -> ()
+	self.hold_count += 1
+
+	local released = false
+
+	return function()
+		if released == true then
+			return
+		end
+		released = true
+
+		self.hold_count -= 1
+		if self.hold_count == 0 then
+			FlushHoldQueue(self)
+		end
+	end
+end
+
 function Replica:Set(path: { string }, value: any)
 	if ReplicationFlag ~= true then
 		error(`[{script.Name}]: "Set()" can't be called outside of WriteLibs client-side`)
@@ -489,6 +554,9 @@ function Replica:Write(function_name: string, ...): ...any
 end
 
 local function DestroyReplica(replica, is_depth_call)
+	-- Apply held updates before destruction:
+	FlushHoldQueue(replica, true)
+
 	-- Scan children replicas:
 	for child in pairs(replica.Children) do
 		DestroyReplica(child, true)
@@ -693,54 +761,24 @@ RemoteRequestData.OnClientEvent:Connect(function()
 end)
 
 RemoteSet.OnClientEvent:Connect(function(id: number, path: {}, value: any)
-	local replica = GetInternalReplica(id)
-	ReplicationFlag = true
-	local success, msg = pcall(replica.Set, replica, path, value)
-	ReplicationFlag = false
-	if success ~= true then
-		error(`[{script.Name}]: Error while updating replica:\n{replica:Identify()}\n` .. msg)
-	end
+	ProcessUpdate(GetInternalReplica(id), "Set", path, value)
 end)
 
 RemoteSetValues.OnClientEvent:Connect(function(id: number, path: {}, values: {})
-	local replica = GetInternalReplica(id)
-	ReplicationFlag = true
-	local success, msg = pcall(replica.SetValues, replica, path, values)
-	ReplicationFlag = false
-	if success ~= true then
-		error(`[{script.Name}]: Error while updating replica:\n{replica:Identify()}\n` .. msg)
-	end
+	ProcessUpdate(GetInternalReplica(id), "SetValues", path, values)
 end)
 
 RemoteTableInsert.OnClientEvent:Connect(function(id: number, path: {}, value: any, index: number?)
-	local replica = GetInternalReplica(id)
-	ReplicationFlag = true
-	local success, msg = pcall(replica.TableInsert, replica, path, value, index)
-	ReplicationFlag = false
-	if success ~= true then
-		error(`[{script.Name}]: Error while updating replica:\n{replica:Identify()}\n` .. msg)
-	end
+	ProcessUpdate(GetInternalReplica(id), "TableInsert", path, value, index)
 end)
 
 RemoteTableRemove.OnClientEvent:Connect(function(id: number, path: {}, index: number)
-	local replica = GetInternalReplica(id)
-	ReplicationFlag = true
-	local success, msg = pcall(replica.TableRemove, replica, path, index)
-	ReplicationFlag = false
-	if success ~= true then
-		error(`[{script.Name}]: Error while updating replica:\n{replica:Identify()}\n` .. msg)
-	end
+	ProcessUpdate(GetInternalReplica(id), "TableRemove", path, index)
 end)
 
 RemoteWrite.OnClientEvent:Connect(function(id: number, fn_id: number, ...)
 	local replica = GetInternalReplica(id)
-	local fn_name = replica.write_lib[fn_id].Name
-	ReplicationFlag = true
-	local success, msg = pcall(replica.Write, replica, fn_name, ...)
-	ReplicationFlag = false
-	if success ~= true then
-		error(`[{script.Name}]: Error while updating replica:\n{replica:Identify()}\n` .. msg)
-	end
+	ProcessUpdate(replica, "Write", replica.write_lib[fn_id].Name, ...)
 end)
 
 local function RemoteSignalHandle(id: number, ...)
