@@ -63,14 +63,13 @@ MAD STUDIO
 
 		Replica:IsActive(): boolean
 
-		Replica:Hold(write_name: string?) -- Turns holding ON (a switch - holding twice has no extra effect):
-			-- with write_name only :Write() updates of that name are queued instead of applied;
-			-- without it ALL incoming updates (Set, SetValues, TableInsert, TableRemove, Write) are queued.
-			-- Held Write functions should apply relative changes (deltas) - absolute writes to the same
-			-- data from elsewhere can otherwise apply out of order.
+		Replica:Hold(write_name: string) -- Turns holding ON for the given :Write() name (a switch -
+			-- holding twice has no extra effect): incoming :Write() updates of that name are queued
+			-- instead of applied. Held Write functions should apply relative changes (deltas) -
+			-- absolute writes to the same data from elsewhere can otherwise apply out of order.
 
-		Replica:Release(write_name: string?) -- Turns the matching hold switch OFF and applies queued
-			-- updates that are no longer held, in original order, firing listeners as they apply.
+		Replica:Release(write_name: string) -- Turns the hold switch OFF for the given name and applies
+			-- queued updates that are no longer held, in original order, firing listeners as they apply.
 			-- Destruction applies queued updates immediately.
 
 --]]
@@ -161,22 +160,13 @@ local function ApplyUpdate(replica, method: string, ...)
 	end
 end
 
-local function IsHeld(replica, name: string?)
-	if replica.hold_all == true then
-		return true
-	end
-	if name ~= nil then
-		local hold_writes = replica.hold_writes
-		if hold_writes ~= nil and hold_writes[name] == true then
-			return true
-		end
-	end
-	return false
+local function IsHeld(replica, name: string)
+	return replica.hold_writes[name] == true
 end
 
 local function FlushHoldQueue(replica, force: boolean?)
 	local hold_queue = replica.hold_queue
-	if hold_queue == nil then
+	if #hold_queue == 0 then
 		return
 	end
 
@@ -189,25 +179,19 @@ local function FlushHoldQueue(replica, force: boolean?)
 		end
 	end
 
-	replica.hold_queue = if #remaining > 0 then remaining else nil
+	replica.hold_queue = remaining
 end
 
 local function ProcessUpdate(replica, method: string, ...)
-	local name: string? = nil
 	if method == "Write" then
-		name = (select(1, ...))
+		local name = (select(1, ...))
+		if IsHeld(replica, name) then
+			table.insert(replica.hold_queue, { name = name, update = table.pack(method, ...) })
+			return
+		end
 	end
 
-	if IsHeld(replica, name) then
-		local hold_queue = replica.hold_queue
-		if hold_queue == nil then
-			hold_queue = {}
-			replica.hold_queue = hold_queue
-		end
-		table.insert(hold_queue, { name = name, update = table.pack(method, ...) })
-	else
-		ApplyUpdate(replica, method, ...)
-	end
+	ApplyUpdate(replica, method, ...)
 end
 
 ----- Public -----
@@ -243,8 +227,8 @@ export type Replica<TData, TTags> = {
 	UFireServer: (self: any, ...any) -> (),
 	Identify: (self: any) -> string,
 	IsActive: (self: any) -> boolean,
-	Hold: (self: any, write_name: string?) -> (),
-	Release: (self: any, write_name: string?) -> (),
+	Hold: (self: any, write_name: string) -> (),
+	Release: (self: any, write_name: string) -> (),
 }
 
 local FreeRunnerThread
@@ -305,9 +289,8 @@ local function ReplicaNew(id: number, self_creation: {}) -- self_creation = {tok
 		write_listeners = {}, -- {[key]: Signal}
 		changed_listeners = Signal.New(),
 
-		hold_all = false,
-		hold_writes = nil, -- {[write_name]: true}?
-		hold_queue = nil, -- {{name: string?, update: packed_update}, ...}?
+		hold_writes = {}, -- {[write_name]: true}
+		hold_queue = {}, -- {{name: string, update: packed_update}, ...}
 	}, Replica)
 
 	if parent ~= nil then
@@ -451,40 +434,20 @@ function Replica:IsActive(): boolean
 	return self.Maid:IsActive()
 end
 
-function Replica:Hold(write_name: string?)
-	if write_name ~= nil and type(write_name) ~= "string" then
-		error(`[{script.Name}]: "write_name" must be a string or nil`)
+function Replica:Hold(write_name: string)
+	if type(write_name) ~= "string" then
+		error(`[{script.Name}]: "write_name" must be a string`)
 	end
 
-	if write_name ~= nil then
-		local hold_writes = self.hold_writes
-		if hold_writes == nil then
-			hold_writes = {}
-			self.hold_writes = hold_writes
-		end
-		hold_writes[write_name] = true
-	else
-		self.hold_all = true
-	end
+	self.hold_writes[write_name] = true
 end
 
-function Replica:Release(write_name: string?)
-	if write_name ~= nil and type(write_name) ~= "string" then
-		error(`[{script.Name}]: "write_name" must be a string or nil`)
+function Replica:Release(write_name: string)
+	if type(write_name) ~= "string" then
+		error(`[{script.Name}]: "write_name" must be a string`)
 	end
 
-	if write_name ~= nil then
-		local hold_writes = self.hold_writes
-		if hold_writes ~= nil then
-			hold_writes[write_name] = nil
-			if next(hold_writes) == nil then
-				self.hold_writes = nil
-			end
-		end
-	else
-		self.hold_all = false
-	end
-
+	self.hold_writes[write_name] = nil
 	FlushHoldQueue(self)
 end
 
