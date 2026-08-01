@@ -207,6 +207,12 @@ export type Replica<TData, TTags> = {
 	OnClientEvent: { Connect: (self: any, listener: (...any) -> ()) -> { Disconnect: (self: any) -> () } },
 	Maid: typeof(Maid),
 
+	Set: (self: any, path: { string | number }, value: any) -> (),
+	SetValues: (self: any, path: { string | number }, values: { [string]: any }) -> (),
+	TableInsert: (self: any, path: { string | number }, value: any, index: number?) -> number,
+	TableRemove: (self: any, path: { string | number }, index: number) -> any,
+	Write: (self: any, function_name: string, ...any) -> ...any,
+
 	OnSet: (
 		self: any,
 		path: { string | number },
