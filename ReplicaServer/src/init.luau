@@ -48,6 +48,22 @@ MAD STUDIO
 	Methods [Component]:
 	
 		-- (EXAMPLE) path: {"Players", "2312310", "Health"} -- A path defines a key branch within Replica.Data
+		-- Listeners are called after Replica.Data mutation, once the change has been sent to clients;
+		-- changes made inside a ":Write()" are listened to in order after the whole ":Write()" has been sent,
+		-- followed by its ":OnWrite()" listeners.
+	
+		Replica:OnSet(path: {string | number}, listener): Signal.Connection -- (Only for :Set(); For :SetValues() you can use :OnChange())
+			listener: (new_value: any, old_value: any) -> ()
+			
+		Replica:OnWrite(function_name: string, listener): Signal.Connection
+			listener: (...) -> ()
+			
+		Replica:OnChange(listener): Signal.Connection
+			listener: (action: string, path: {string | number}, param1: any, param2: any?) -> ()
+				-- ("Set",         path, value, old_value)
+				-- ("SetValues",   path, values)
+				-- ("TableInsert", path, value, index)
+				-- ("TableRemove", path, value, index)
 	
 		Replica:Set(path: {string | number}, value: any)
 		Replica:SetValues(path: {string | number}, values: {[string]: any})
@@ -130,6 +146,7 @@ local Index = 0
 
 local WriteLibCache: { [ModuleScript]: { [string | number]: { Id: number, fn: (...any) -> ...any } } } = {}
 local WriteFlag = false
+local WriteListenerQueue = {} -- {{replica, action, path, param1, param2} or {replica, function_name, params}, ...} -- Changes made inside :Write(), listened to after it replicates
 local Tokens: { [string]: boolean } = {}
 local TokenValidate = {}
 
@@ -203,6 +220,37 @@ function GenerateCreation(replica)
 	end)
 end
 
+local function FireChangeListeners(replica, action: string, path: { string | number }, param1: any, param2: any?)
+	if action == "Set" and next(replica.set_listeners) ~= nil then
+		local listeners = replica.set_listeners[table.concat(path, ".")]
+		if listeners ~= nil then
+			listeners:Fire(param1, param2)
+		end
+	end
+	replica.changed_listeners:Fire(action, path, param1, param2)
+end
+
+local function FireWriteListeners(replica, function_name: string, ...)
+	local listeners = replica.write_listeners[function_name]
+	if listeners ~= nil then
+		listeners:Fire(...)
+	end
+end
+
+local function OnChanged(replica, action: string, path: { string | number }, param1: any, param2: any?)
+	if WriteFlag == true then -- Not replicated on its own - listened to once the :Write() replicates
+		table.insert(WriteListenerQueue, {
+			replica = replica,
+			action = action,
+			path = path,
+			param1 = param1,
+			param2 = param2,
+		})
+	else
+		FireChangeListeners(replica, action, path, param1, param2)
+	end
+end
+
 ----- Public -----
 
 export type Replica<TData, TTags> = {
@@ -221,6 +269,22 @@ export type Replica<TData, TTags> = {
 	TableInsert: (self: any, path: { string | number }, value: any, index: number?) -> number,
 	TableRemove: (self: any, path: { string | number }, index: number) -> any,
 	Write: (self: any, function_name: string, ...any) -> ...any,
+
+	OnSet: (
+		self: any,
+		path: { string | number },
+		listener: (new_value: any, old_value: any) -> ()
+	) -> Signal.Connection,
+	OnWrite: (self: any, function_name: string, listener: (...any) -> ()) -> Signal.Connection,
+	OnChange: (
+		self: any,
+		listener: (
+			action: "Set" | "SetValues" | "TableInsert" | "TableRemove",
+			path: { string | number },
+			param1: any,
+			param2: any?
+		) -> ()
+	) -> Signal.Connection,
 	FireClient: (self: any, player: Player, ...any) -> (),
 	FireAllClients: (self: any, ...any) -> (),
 	UFireClient: (self: any, player: Player, ...any) -> (),
@@ -316,6 +380,10 @@ function Replica.New<TData, TTags>(
 		write_lib = write_lib,
 		write_lib_module = params.WriteLib,
 		bind_value = nil,
+
+		set_listeners = {}, -- {[key]: Signal}
+		write_listeners = {}, -- {[key]: Signal}
+		changed_listeners = Signal.New(),
 	}, Replica)
 
 	Replicas[Index] = self
@@ -336,6 +404,36 @@ function Replica.Test()
 	}
 end
 
+function Replica:OnSet(path: {}, listener: () -> ()): Signal.Connection
+	local path_key = table.concat(path, ".")
+	local listeners = self.set_listeners[path_key]
+	if listeners == nil then
+		listeners = Signal.New()
+		self.set_listeners[path_key] = listeners
+	end
+
+	return listeners:Connect(listener)
+end
+
+function Replica:OnWrite(function_name: string, listener: (...any) -> ()): Signal.Connection
+	local listeners = self.write_listeners[function_name]
+	if listeners == nil then
+		listeners = Signal.New()
+		self.write_listeners[function_name] = listeners
+	end
+
+	return listeners:Connect(listener)
+end
+
+function Replica:OnChange(listener: (
+	action: "Set" | "SetValues" | "TableInsert" | "TableRemove",
+	path: { any },
+	param1: any,
+	param2: any?
+) -> ()): Signal.Connection
+	return self.changed_listeners:Connect(listener)
+end
+
 function Replica:Set(path: { string }, value: any)
 	-- Apply local change:
 
@@ -343,7 +441,9 @@ function Replica:Set(path: { string }, value: any)
 	for i = 1, #path - 1 do
 		pointer = pointer[path[i]]
 	end
-	pointer[path[#path]] = value
+	local last_key = path[#path]
+	local old_value = pointer[last_key]
+	pointer[last_key] = value
 
 	-- Replicate change:
 
@@ -361,6 +461,10 @@ function Replica:Set(path: { string }, value: any)
 			end
 		end
 	end
+
+	-- Firing signals:
+
+	OnChanged(self, "Set", path, value, old_value)
 end
 
 function Replica:SetValues(path: { string }, values: { [string]: any })
@@ -390,6 +494,10 @@ function Replica:SetValues(path: { string }, values: { [string]: any })
 			end
 		end
 	end
+
+	-- Firing signals:
+
+	OnChanged(self, "SetValues", path, values)
 end
 
 function Replica:TableInsert(path: { string }, value: any, index: number?): number
@@ -404,6 +512,7 @@ function Replica:TableInsert(path: { string }, value: any, index: number?): numb
 	else
 		table.insert(pointer, value)
 	end
+	local new_index = index or #pointer
 
 	-- Replicate change:
 
@@ -422,7 +531,11 @@ function Replica:TableInsert(path: { string }, value: any, index: number?): numb
 		end
 	end
 
-	return index or #pointer
+	-- Firing signals:
+
+	OnChanged(self, "TableInsert", path, value, new_index)
+
+	return new_index
 end
 
 function Replica:TableRemove(path: { string }, index: number): any
@@ -451,6 +564,10 @@ function Replica:TableRemove(path: { string }, index: number): any
 		end
 	end
 
+	-- Firing signals:
+
+	OnChanged(self, "TableRemove", path, removed_value, index)
+
 	return removed_value
 end
 
@@ -458,7 +575,13 @@ function Replica:Write(function_name: string, ...): ...any
 	local write_lib_entry = self.write_lib[function_name]
 
 	if WriteFlag == true then -- Chained :Write()
-		return write_lib_entry.fn(self, ...)
+		local return_params = table.pack(write_lib_entry.fn(self, ...))
+		table.insert(WriteListenerQueue, {
+			replica = self,
+			function_name = function_name,
+			params = table.pack(...),
+		})
+		return table.unpack(return_params, 1, return_params.n)
 	end
 
 	-- Apply local change:
@@ -466,6 +589,9 @@ function Replica:Write(function_name: string, ...): ...any
 	WriteFlag = true
 	local return_params = table.pack(pcall(write_lib_entry.fn, self, ...))
 	WriteFlag = false
+
+	local listener_queue = WriteListenerQueue -- Dropped if the WriteLib function errors - nothing gets replicated then
+	WriteListenerQueue = {}
 
 	if return_params[1] ~= true then
 		error(`[{script.Name}]: (WriteLib) ` .. tostring(return_params[2]))
@@ -489,6 +615,17 @@ function Replica:Write(function_name: string, ...): ...any
 			end
 		end
 	end
+
+	-- Firing signals:
+
+	for _, entry in ipairs(listener_queue) do
+		if entry.function_name ~= nil then
+			FireWriteListeners(entry.replica, entry.function_name, table.unpack(entry.params, 1, entry.params.n))
+		else
+			FireChangeListeners(entry.replica, entry.action, entry.path, entry.param1, entry.param2)
+		end
+	end
+	FireWriteListeners(self, function_name, ...)
 
 	return table.unpack(return_params)
 end
