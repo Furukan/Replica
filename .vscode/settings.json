@@ -1,0 +1,9 @@
+{
+    "luau-lsp.sourcemap.enabled": true,
+    "luau-lsp.sourcemap.autogenerate": true,
+    "luau-lsp.sourcemap.rojoProjectFile": "default.project.json",
+    "luau-lsp.sourcemap.sourcemapFile": "sourcemap.json",
+    "luau-lsp.sourcemap.useVSCodeWatcher": true,
+    "luau-lsp.platform.type": "roblox",
+    "luau-lsp.fflags.enableNewSolver": true
+}

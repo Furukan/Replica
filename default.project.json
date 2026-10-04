@@ -1,0 +1,12 @@
+{
+  "name": "Replica",
+  "tree": {
+    "$className": "Folder",
+    "ReplicaClient": {
+      "$path": "ReplicaClient"
+    },
+    "ReplicaServer": {
+      "$path": "ReplicaServer"
+    }
+  }
+}
