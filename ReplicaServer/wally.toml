@@ -5,6 +5,6 @@ license = "Apache-2.0"
 registry = "https://github.com/UpliftGames/wally-index"
 realm = "server"
 exclude = ["sourcemap.json"]
-include = ["src", "wally.toml", "wally.lock", "default.project.json"]
+include = ["src", "wally.toml", "wally.lock", "default.project.json", "LICENSE"]
 
 [dependencies]
