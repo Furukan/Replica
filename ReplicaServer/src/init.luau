@@ -102,10 +102,10 @@ MAD STUDIO
 ----- Dependencies -----
 
 local ReplicaShared = script.ReplicaShared
+local Maid = require(ReplicaShared.Maid)
 local RateLimit = require(ReplicaShared.RateLimit)
 local Remote = require(ReplicaShared.Remote)
 local Signal = require(ReplicaShared.Signal)
-local Maid = require(ReplicaShared.Maid)
 
 ----- Private -----
 
@@ -116,8 +116,8 @@ local MAID_LOCK = {}
 local EMPTY_TABLE = {}
 
 local CollectionService = game:GetService("CollectionService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local GlobalRateLimit = RateLimit.New(120)
 
@@ -333,14 +333,12 @@ function Replica.Token(name: string)
 	return self
 end
 
-function Replica.New<TData, TTags>(
-	params: {
-		Token: typeof(ReplicaToken),
-		Tags: TTags?,
-		Data: TData?,
-		WriteLib: ModuleScript?,
-	}
-): Replica<TData, TTags>
+function Replica.New<TData, TTags>(params: {
+	Token: typeof(ReplicaToken),
+	Tags: TTags?,
+	Data: TData?,
+	WriteLib: ModuleScript?,
+}): Replica<TData, TTags>
 	local token = params.Token
 	local tags = params.Tags or ({} :: TTags)
 	local data = params.Data or ({} :: TData)

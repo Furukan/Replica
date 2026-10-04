@@ -16,8 +16,8 @@ MAD STUDIO
 local CONTAINER_NAME = "RemoteEvents"
 local REMOTE_MISSING_TIME = 20
 
-local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 local IsStudio = RunService:IsStudio()
 local IsServer = RunService:IsServer()
