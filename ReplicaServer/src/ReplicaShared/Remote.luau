@@ -1,5 +1,6 @@
 --[[
 MAD STUDIO
+Modified by Furukan, see https://github.com/Furukan/Replica for the changes
 
 -[Remote]---------------------------------------
 	Remote event setup utility; Prevents duplicate RemoteEvent names server-side
